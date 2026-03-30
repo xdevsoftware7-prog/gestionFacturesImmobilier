@@ -40,7 +40,7 @@ const verifyToken = (req, res, next) => {
 // Middleware pour vérifier le service/rôle
 const authorizeService = (serviceRequis,role) => {
     return (req, res, next) => {
-        if (req.user.service !== serviceRequis && req.user.role !== role) {
+        if (req.user.service !== serviceRequis && (req.user.role !== role || req.user.role !=='admin')) {
             return res.status(403).json({ 
                 message: `Accès refusé : réservé au service ${serviceRequis}` 
             });
