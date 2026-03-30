@@ -17,6 +17,39 @@ const pool = mysql.createPool({
     connectionLimit: 10
 });
 
+
+// Middleware de vérification du token
+const verifyToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Récupère le token après "Bearer"
+    
+    if (!token) {
+        return res.status(401).json({ message: 'Accès non autorisé : Token manquant' });
+    }
+    
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        return res.status(403).json({ message: 'Token invalide ou expiré' });
+    }
+};
+
+
+// Middleware pour vérifier le service/rôle
+const authorizeService = (serviceRequis,role) => {
+    return (req, res, next) => {
+        if (req.user.service !== serviceRequis && req.user.role !== role) {
+            return res.status(403).json({ 
+                message: `Accès refusé : réservé au service ${serviceRequis}` 
+            });
+        }
+        next();
+    };
+};
+
+
 // EndPoint de login
 app.post('/api/auth/login', async (req, res) => {
     try {
@@ -116,36 +149,36 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 
-// Middleware de vérification du token
-const verifyToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Récupère le token après "Bearer"
-    
-    if (!token) {
-        return res.status(401).json({ message: 'Accès non autorisé : Token manquant' });
-    }
-    
+// Endpoint de logout
+app.post('/api/auth/logout', verifyToken, async (req, res) => {
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (err) {
-        return res.status(403).json({ message: 'Token invalide ou expiré' });
-    }
-};
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
 
-
-// Middleware pour vérifier le service/rôle
-const authorizeService = (serviceRequis,role) => {
-    return (req, res, next) => {
-        if (req.user.service !== serviceRequis && req.user.role !== role) {
-            return res.status(403).json({ 
-                message: `Accès refusé : réservé au service ${serviceRequis}` 
-            });
+        if (!token) {
+            return res.status(400).json({ message: "Aucun token fourni" });
         }
-        next();
-    };
-};
+
+        // On récupère la date d'expiration du token pour savoir combien de temps le garder en blacklist
+        const decoded = jwt.decode(token);
+        const expiryDate = new Date(decoded.exp * 1000);
+
+        // Ajouter le token à la liste noire
+        await pool.execute(
+            'INSERT INTO token_blacklist (token, expire_at) VALUES (?, ?)',
+            [token, expiryDate]
+        );
+
+        res.json({ success: true, message: "Déconnexion réussie" });
+
+    } catch (error) {
+        console.error("Erreur Logout:", error);
+        res.status(500).json({ message: "Erreur lors de la déconnexion" });
+    }
+});
+
+
+
 
 
 app.listen(3001, () => {
