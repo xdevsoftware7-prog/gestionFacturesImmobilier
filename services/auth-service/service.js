@@ -135,6 +135,18 @@ const verifyToken = (req, res, next) => {
 };
 
 
+// Middleware pour vérifier le service/rôle
+const authorizeService = (serviceRequis,role) => {
+    return (req, res, next) => {
+        if (req.user.service !== serviceRequis && req.user.role !== role) {
+            return res.status(403).json({ 
+                message: `Accès refusé : réservé au service ${serviceRequis}` 
+            });
+        }
+        next();
+    };
+};
+
 
 app.listen(3001, () => {
     console.log('Auth service running on port 3001');
