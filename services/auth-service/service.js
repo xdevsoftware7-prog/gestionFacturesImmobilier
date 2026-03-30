@@ -1,4 +1,4 @@
-const JWT_SECRET = "jwt-secret";
+require('dotenv').config();
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -9,16 +9,74 @@ app.use(express.json());
 
 // Connexion MySQL
 const pool = mysql.createPool({
-    host:'localhost',
-    user:'root',
-    password:'',
-    database:'gestionFacturesImmobilier',
+    host: process.env.DB_HOST,
+    user:process.env.DB_USER,
+    password:process.env.DB_PASS,
+    database:process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10
 });
 
+// EndPoint de login
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
 
+        // 1. Validation basique
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Veuillez remplir tous les champs' });
+        }
 
+        // 2. Recherche de l'utilisateur
+        const [users] = await pool.execute(
+            'SELECT * FROM utilisateurs WHERE email = ?',
+            [email]
+        );
+
+        if (users.length === 0) {
+            return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
+        }
+
+        const user = users[0];
+
+        // 3. Vérification du mot de passe
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        
+        if (!isValidPassword) {
+            return res.status(401).json({ message: 'Email ou mot de passe incorrect' });
+        }
+
+        // 4. Génération du JWT (Assurez-vous que JWT_SECRET est défini dans votre .env)
+        const token = jwt.sign(
+            { 
+                id: user.id, 
+                email: user.email, 
+                role: user.role,
+                service: user.service 
+            },
+            process.env.JWT_SECRET, // Utilisation de la variable d'environnement
+            { expiresIn: '24h' }
+        );
+
+        // 5. Réponse structurée
+        res.status(200).json({ 
+            success: true,
+            token, 
+            user: { 
+                id: user.id, 
+                nom: user.nom,
+                prenom: user.prenom,
+                email: user.email, 
+                role: user.role,
+                service: user.service 
+            } 
+        });
+
+    } catch (error) {
+        console.error("Erreur Login:", error);
+        res.status(500).json({ message: "Une erreur interne est survenue" });
+    }
+});
 
 // Endpoint de register
 app.post('/api/auth/register', async (req, res) => {
@@ -60,19 +118,20 @@ app.post('/api/auth/register', async (req, res) => {
 
 // Middleware de vérification du token
 const verifyToken = (req, res, next) => {
-    const token = req.headers['authorization']?.split(' ')[1];
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Récupère le token après "Bearer"
     
     if (!token) {
-        return res.status(403).json({ message: 'Token requis' });
+        return res.status(401).json({ message: 'Accès non autorisé : Token manquant' });
     }
     
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-        if (err) {
-            return res.status(401).json({ message: 'Token invalide' });
-        }
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
-    });
+    } catch (err) {
+        return res.status(403).json({ message: 'Token invalide ou expiré' });
+    }
 };
 
 
