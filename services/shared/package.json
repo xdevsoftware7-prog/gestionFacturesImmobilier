@@ -1,5 +1,5 @@
 {
-  "name": "shared",
+  "name": "@gestion-facturation/shared",
   "version": "1.0.0",
   "description": "",
   "main": "verify-auth.js",
