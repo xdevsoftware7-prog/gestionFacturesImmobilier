@@ -74,7 +74,7 @@ const verifyAuth = (serviceAutorise) => {
 
             const user = response.data.user;
 
-            // Vérification : l'utilisateur appartient-il au bon service ?
+            // Vérification : l'utilisateur appartient-il au bon service ? ou s'il s'agit de l'admin
             if (response.data.valid && (user.service === serviceAutorise || user.role === 'admin')) {
                 req.user = user;
                 next();
