@@ -19,15 +19,26 @@ const pool = mysql.createPool({
 
 
 // Middleware de vérification du token
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => { 
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Récupère le token après "Bearer"
+    const token = authHeader && authHeader.split(' ')[1];
     
     if (!token) {
         return res.status(401).json({ message: 'Accès non autorisé : Token manquant' });
     }
     
     try {
+        // -- Vérification Blacklist ---
+        const [blacklisted] = await pool.execute(
+            'SELECT id FROM token_blacklist WHERE token = ?',
+            [token]
+        );
+
+        if (blacklisted.length > 0) {
+            return res.status(401).json({ message: 'Session expirée' });
+        }
+        // --------------------------------------
+
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
@@ -48,6 +59,41 @@ const authorizeService = (serviceRequis,role) => {
         next();
     };
 };
+
+
+const verifyAuth = (serviceAutorise) => {
+    return async (req, res, next) => {
+        const token = req.headers['authorization'];
+        if (!token) return res.status(401).json({ message: 'Token manquant' });
+
+        try {
+            // Appel au microservice auth-service
+            const response = await axios.get('http://auth-service:3001/api/auth/verify', {
+                headers: { 'Authorization': token }
+            });
+
+            const user = response.data.user;
+
+            // Vérification : l'utilisateur appartient-il au bon service ?
+            if (response.data.valid && (user.service === serviceAutorise || user.role === 'admin')) {
+                req.user = user;
+                next();
+            } else {
+                res.status(403).json({ message: `Accès interdit : réservé au service ${serviceAutorise}` });
+            }
+        } catch (error) {
+            res.status(401).json({ message: 'Session invalide' });
+        }
+    };
+};
+
+app.get('/api/auth/verify', verifyToken, (req, res) => {
+    // Si le middleware verifyToken passe, c'est que le token est valide
+    res.json({
+        valid: true,
+        user: req.user // Contient id, email, role, service (venant du token)
+    });
+});
 
 
 // EndPoint de login
@@ -176,6 +222,8 @@ app.post('/api/auth/logout', verifyToken, async (req, res) => {
         res.status(500).json({ message: "Erreur lors de la déconnexion" });
     }
 });
+
+
 
 
 
